@@ -1,0 +1,42 @@
+[Unit]
+Description=Deye Wi-Fi module TLS proxy (pass-through to Deye cloud + local read-only logger)
+After=network-online.target deye-hotspot.service
+Wants=network-online.target
+Requires=deye-hotspot.service
+
+[Service]
+Type=simple
+User=@SERVICE_USER@
+Group=@SERVICE_USER@
+EnvironmentFile=@CONF_DIR@/deye-proxy.env
+ExecStartPre=+@INSTALL_DIR@/deye-fw.sh up
+ExecStart=/usr/bin/python3 @INSTALL_DIR@/deye_proxy.py
+ExecStopPost=+@INSTALL_DIR@/deye-fw.sh down
+Restart=always
+RestartSec=5
+ReadWritePaths=@LOG_DIR@
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

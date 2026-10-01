@@ -1,0 +1,7 @@
+.env
+*.pem
+*.log
+*.hex
+*.jsonl
+*.pcap
+__pycache__/

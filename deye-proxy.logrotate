@@ -1,0 +1,10 @@
+@LOG_DIR@/*.log @LOG_DIR@/*.hex @LOG_DIR@/*.jsonl {
+    su @SERVICE_USER@ @SERVICE_USER@
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}

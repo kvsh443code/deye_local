@@ -1,0 +1,14 @@
+[Unit]
+Description=Hotspot for the Deye Wi-Fi module (netplan file in /run, removed on stop)
+After=NetworkManager.service
+Requires=NetworkManager.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=@CONF_DIR@/deye-proxy.env
+ExecStart=@INSTALL_DIR@/deye-hotspot.sh up
+ExecStop=@INSTALL_DIR@/deye-hotspot.sh down
+
+[Install]
+WantedBy=multi-user.target
