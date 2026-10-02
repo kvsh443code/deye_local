@@ -20,6 +20,9 @@ if ! id "$SERVICE_USER" >/dev/null 2>&1; then
     useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "$SERVICE_USER"
   fi
 fi
+if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; then
+  usermod -aG "$SERVICE_USER" "$SUDO_USER"
+fi
 
 install -d -o root -g root -m 755 "$INSTALL_DIR"
 install -o root -g root -m 644 deye_proxy.py settings.py register_map.py "$INSTALL_DIR/"
