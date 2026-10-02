@@ -18,6 +18,9 @@ LOG_DIR = setting("LOG_DIR")
 LOCAL_LOGGER = (setting("LOCAL_BIND"), int(setting("LOCAL_PORT")))
 LOCAL_ALLOWED = {a.strip() for a in setting("LOCAL_ALLOW").split(",") if a.strip()}
 READ_FUNCTIONS = (0x03, 0x04)
+CLOUD_WRITES = setting("CLOUD_WRITES")
+if CLOUD_WRITES not in ("allow", "block"):
+    sys.exit(f"CLOUD_WRITES must be allow or block, got {CLOUD_WRITES!r}")
 
 POLL_MODE = sys.argv[1] if len(sys.argv) > 1 else setting("POLL_MODE")
 DISCOVER_RANGE = range(int(setting("DISCOVER_FIRST_REG")), int(setting("DISCOVER_LAST_REG")) + 1)
@@ -89,6 +92,11 @@ def parse_batch_request(payload):
             off += 2 * count
         entries.append((fc, reg, count, values))
     return "write" if writes else "read", entries
+
+
+def is_read_request(frame):
+    parsed = parse_batch_request(frame[11:-2])
+    return parsed is not None and parsed[0] == "read" and all(fc in READ_FUNCTIONS for fc, _, _, _ in parsed[1])
 
 
 def parse_write_reply(payload, entries):
@@ -209,6 +217,11 @@ class Session:
                         if chunk[4] == 0x45:
                             self.recent_cloud_ids = (self.recent_cloud_ids + [chunk[5]])[-20:]
                             self.note_cloud_request(chunk)
+                            if CLOUD_WRITES == "block" and not is_read_request(chunk):
+                                self.cloud_requests.pop(chunk[5], None)
+                                self.record("DROP", chunk)
+                                CLOUD_READS.write(f"{ts()} BLOCKED id={chunk[5]:02x} {chunk[11:-2].hex(' ')}\n")
+                                continue
                         self.record("DOWN", chunk)
                     with self.to_stick_lock:
                         self.stick.sendall(chunk)
@@ -452,7 +465,7 @@ s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 s.bind(LISTEN)
 threading.Thread(target=local_server, args=(ls,), daemon=True).start()
 s.listen(4)
-log(f"deye proxy listening on {LISTEN[0]}:{LISTEN[1]} -> {UPSTREAM[0]}:{UPSTREAM[1]} poll={POLL_MODE}")
+log(f"deye proxy listening on {LISTEN[0]}:{LISTEN[1]} -> {UPSTREAM[0]}:{UPSTREAM[1]} poll={POLL_MODE} cloud_writes={CLOUD_WRITES}")
 while True:
     c, a = s.accept()
     threading.Thread(target=handle, args=(c, a), daemon=True).start()

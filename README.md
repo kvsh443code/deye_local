@@ -38,6 +38,12 @@ Everything is removed including the logs and the service user.
 sudo ./uninstall.sh --purge
 ```
 
+## Cloud writes
+
+Writes from the cloud to the inverter are passed through when CLOUD_WRITES is set to allow in .env. When it is set to block, only cloud reads reach the inverter, and every other cloud command is dropped and logged as BLOCKED in deye-cloud-reads.log. Settings cannot be changed from DeyeCloud while writes are blocked. The installer is run again after the setting is changed.
+
+Reads from Home Assistant on the local port are always read only.
+
 ## Logs
 
 Logs are written to the LOG_DIR folder set in .env. The default folder is used in the paths below.
