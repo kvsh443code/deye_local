@@ -40,7 +40,7 @@ sudo ./uninstall.sh --purge
 
 ## Cloud writes
 
-Writes from the cloud to the inverter are passed through when CLOUD_WRITES is set to allow in .env. When it is set to block, only cloud reads reach the inverter, and every other cloud command is dropped and logged as BLOCKED in deye-cloud-reads.log. Settings cannot be changed from DeyeCloud while writes are blocked. The installer is run again after the setting is changed.
+Writes from the cloud to the inverter are passed through when CLOUD_WRITES is set to allow in .env. When it is set to block, only cloud reads reach the inverter, and every other cloud command is dropped and logged as BLOCKED in deye-cloud-reads.log. Settings cannot be changed from DeyeCloud while writes are blocked. Nothing is sent back for a blocked write, so the cloud sends it once more and the app then reports a timeout. The installer is run again after the setting is changed.
 
 Reads from Home Assistant on the local port are always read only.
 
