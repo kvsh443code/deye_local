@@ -9,6 +9,7 @@ Type=simple
 User=@SERVICE_USER@
 Group=@SERVICE_USER@
 EnvironmentFile=@CONF_DIR@/deye-proxy.env
+ExecStartPre=+@INSTALL_DIR@/deye-wait-addr.sh
 ExecStartPre=+@INSTALL_DIR@/deye-fw.sh up
 ExecStart=/usr/bin/python3 @INSTALL_DIR@/deye_proxy.py
 ExecStopPost=+@INSTALL_DIR@/deye-fw.sh down

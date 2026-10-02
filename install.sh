@@ -8,7 +8,7 @@ set -a; . ./.env; set +a
 
 for v in HOTSPOT_IFACE HOTSPOT_SSID HOTSPOT_PASSWORD HOTSPOT_GATEWAY STICK_MAC LOGGER_SERIAL \
          PROXY_PORT UPSTREAM_HOST UPSTREAM_PORT IGEN_CA_SHA256 LOCAL_BIND LOCAL_PORT LOCAL_ALLOW \
-         SERVICE_USER INSTALL_DIR CONF_DIR LOG_DIR; do
+         ADDR_WAIT_TIMEOUT_S SERVICE_USER INSTALL_DIR CONF_DIR LOG_DIR; do
   eval "val=\${$v:-}"
   [ -n "$val" ] || { echo "missing $v in .env" >&2; exit 1; }
 done
@@ -18,7 +18,7 @@ id "$SERVICE_USER" >/dev/null 2>&1 || \
 
 install -d -o root -g root -m 755 "$INSTALL_DIR"
 install -o root -g root -m 644 deye_proxy.py settings.py register_map.py "$INSTALL_DIR/"
-install -o root -g root -m 755 deye-fw.sh deye-hotspot.sh "$INSTALL_DIR/"
+install -o root -g root -m 755 deye-fw.sh deye-hotspot.sh deye-wait-addr.sh "$INSTALL_DIR/"
 
 install -d -o root -g "$SERVICE_USER" -m 750 "$CONF_DIR"
 install -o root -g "$SERVICE_USER" -m 640 .env "$CONF_DIR/deye-proxy.env"
