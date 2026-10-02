@@ -74,21 +74,31 @@ def checksum(frame):
 
 
 def parse_batch_request(payload):
-    if len(payload) < 17 or payload[0] != 0x04:
+    if len(payload) < 17 or payload[0] not in (0x04, 0x05):
         return None
-    count = payload[16]
-    entries = []
-    for i in range(count):
-        off = 17 + 4 * i
+    writes = payload[0] == 0x05
+    entries, off = [], 17
+    for _ in range(payload[16]):
         if off + 4 > len(payload):
             break
-        entries.append((payload[off], struct.unpack(">H", payload[off + 1:off + 3])[0], payload[off + 3]))
-    return entries
+        fc, reg, count = payload[off], struct.unpack(">H", payload[off + 1:off + 3])[0], payload[off + 3]
+        off += 4
+        values = []
+        if writes:
+            values = [struct.unpack(">H", payload[off + 2 * k:off + 2 * k + 2])[0] for k in range(count)]
+            off += 2 * count
+        entries.append((fc, reg, count, values))
+    return "write" if writes else "read", entries
+
+
+def parse_write_reply(payload, entries):
+    statuses = payload[16:16 + len(entries)]
+    return [(reg, status) for (_, reg, _, _), status in zip(entries, statuses)]
 
 
 def parse_batch_reply(payload, entries):
     values, i = [], 16
-    for fc, reg, count in entries:
+    for fc, reg, count, _ in entries:
         if i >= len(payload):
             break
         n = payload[i]
@@ -149,22 +159,34 @@ class Session:
     def note_cloud_request(self, frame):
         try:
             payload = frame[11:-2]
-            entries = parse_batch_request(payload)
-            if entries is None:
+            parsed = parse_batch_request(payload)
+            if parsed is None:
                 CLOUD_READS.write(f"{ts()} REQUEST unknown format {payload.hex(' ')}\n")
                 return
-            if any(fc not in READ_FUNCTIONS for fc, _, _ in entries):
-                CLOUD_READS.write(f"{ts()} REQUEST non read {payload.hex(' ')}\n")
-            self.cloud_requests[frame[5]] = entries
+            kind, entries = parsed
+            stamp = ts()
+            if kind == "write":
+                for fc, reg, _, values in entries:
+                    for k, value in enumerate(values):
+                        CLOUD_READS.write(f"{stamp} WRITE fc=0x{fc:02x} {describe(reg + k, value)}\n")
+            elif any(fc not in READ_FUNCTIONS for fc, _, _, _ in entries):
+                CLOUD_READS.write(f"{stamp} REQUEST non read {payload.hex(' ')}\n")
+            self.cloud_requests[frame[5]] = (kind, entries)
         except Exception as e:
             log(f"cloud request decode error: {e!r}")
 
     def note_cloud_reply(self, frame):
         try:
-            entries = self.cloud_requests.pop(frame[5], None)
-            if entries is None:
+            request = self.cloud_requests.pop(frame[5], None)
+            if request is None:
                 return
+            kind, entries = request
             stamp = ts()
+            if kind == "write":
+                for reg, status in parse_write_reply(frame[11:-2], entries):
+                    result = "OK" if status == 0x01 else f"FAILED status=0x{status:02x}"
+                    CLOUD_READS.write(f"{stamp} WRITE {result} {reg}\n")
+                return
             for reg, raw in parse_batch_reply(frame[11:-2], entries):
                 CLOUD_READS.write(f"{stamp} {describe(reg, raw)}\n")
         except Exception as e:
