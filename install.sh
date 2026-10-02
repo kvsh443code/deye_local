@@ -13,8 +13,13 @@ for v in HOTSPOT_IFACE HOTSPOT_SSID HOTSPOT_PASSWORD HOTSPOT_GATEWAY STICK_MAC L
   [ -n "$val" ] || { echo "missing $v in .env" >&2; exit 1; }
 done
 
-id "$SERVICE_USER" >/dev/null 2>&1 || \
-  useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "$SERVICE_USER"
+if ! id "$SERVICE_USER" >/dev/null 2>&1; then
+  if getent group "$SERVICE_USER" >/dev/null; then
+    useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin -g "$SERVICE_USER" "$SERVICE_USER"
+  else
+    useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "$SERVICE_USER"
+  fi
+fi
 
 install -d -o root -g root -m 755 "$INSTALL_DIR"
 install -o root -g root -m 644 deye_proxy.py settings.py register_map.py "$INSTALL_DIR/"

@@ -30,7 +30,8 @@ rm -rf "$INSTALL_DIR" "$CONF_DIR"
 
 if [ "$PURGE" -eq 1 ]; then
   rm -rf "$LOG_DIR"
-  id "$SERVICE_USER" >/dev/null 2>&1 && userdel "$SERVICE_USER"
+  if id "$SERVICE_USER" >/dev/null 2>&1; then userdel "$SERVICE_USER"; fi
+  if getent group "$SERVICE_USER" >/dev/null; then groupdel "$SERVICE_USER"; fi
   echo "removed services, files, logs and user $SERVICE_USER"
 else
   echo "removed services and files; logs kept in $LOG_DIR (use --purge to remove them and user $SERVICE_USER)"
