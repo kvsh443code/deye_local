@@ -1008,7 +1008,6 @@ parameters:
         uom: "°C"
         scale: 0.1
         rule: 2
-        offset: 1000
         registers: [0x005A]
 
       - name: "Temperature"
