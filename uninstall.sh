@@ -15,7 +15,7 @@ systemctl disable --now deye-proxy.service deye-hotspot.service 2>/dev/null || t
 
 if [ -x "$INSTALL_DIR/deye-fw.sh" ]; then "$INSTALL_DIR/deye-fw.sh" down || true; fi
 if [ -n "${HOTSPOT_IFACE:-}" ] && [ -n "${HOTSPOT_SSID:-}" ]; then
-  nmcli connection down "netplan-${HOTSPOT_IFACE}-${HOTSPOT_SSID}" 2>/dev/null || true
+  nmcli connection down "netplan-deye-hotspot-${HOTSPOT_SSID}" 2>/dev/null || true
 fi
 rm -f /run/netplan/90-deye-hotspot.yaml
 netplan generate

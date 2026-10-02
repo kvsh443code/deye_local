@@ -1,8 +1,9 @@
 #!/bin/sh
 set -eu
-: "${HOTSPOT_IFACE:?}" "${HOTSPOT_SSID:?}" "${HOTSPOT_PASSWORD:?}"
+: "${HOTSPOT_IFACE:?}" "${HOTSPOT_SSID:?}" "${HOTSPOT_PASSWORD:?}" "${HOTSPOT_HIDDEN:?}" "${HOTSPOT_BAND:?}" "${HOTSPOT_CHANNEL:?}"
 YAML=/run/netplan/90-deye-hotspot.yaml
-CONN="netplan-${HOTSPOT_IFACE}-${HOTSPOT_SSID}"
+NETPLAN_ID=deye-hotspot
+CONN="netplan-${NETPLAN_ID}-${HOTSPOT_SSID}"
 
 yaml_quote() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 
@@ -14,14 +15,16 @@ case "${1:-}" in
 network:
   version: 2
   wifis:
-    ${HOTSPOT_IFACE}:
+    ${NETPLAN_ID}:
       renderer: NetworkManager
+      match:
+        name: "$(yaml_quote "$HOTSPOT_IFACE")"
       access-points:
         "$(yaml_quote "$HOTSPOT_SSID")":
           mode: ap
-          hidden: ${HOTSPOT_HIDDEN:-true}
-          band: 2.4GHz
-          channel: ${HOTSPOT_CHANNEL:-6}
+          hidden: ${HOTSPOT_HIDDEN}
+          band: ${HOTSPOT_BAND}
+          channel: ${HOTSPOT_CHANNEL}
           password: "$(yaml_quote "$HOTSPOT_PASSWORD")"
           networkmanager:
             passthrough:
@@ -29,6 +32,12 @@ network:
 EOF
     netplan generate
     nmcli connection reload
+    i=0
+    until nmcli -t -f NAME connection show | grep -qxF "$CONN"; do
+      i=$((i + 1))
+      [ "$i" -le 30 ] || { echo "NetworkManager did not load $CONN" >&2; exit 1; }
+      sleep 1
+    done
     nmcli --wait 30 connection up "$CONN"
     ;;
   down)
