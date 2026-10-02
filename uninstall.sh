@@ -6,7 +6,7 @@ cd "$(dirname "$0")"
 PURGE=0
 [ "${1:-}" = "--purge" ] && PURGE=1
 
-ENV=.env
+ENV="$(pwd)/.env"
 [ -f "$ENV" ] || ENV=/etc/deye-proxy/deye-proxy.env
 [ -f "$ENV" ] || { echo "no .env here and no installed env file; nothing to read settings from" >&2; exit 1; }
 set -a; . "$ENV"; set +a
