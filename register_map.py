@@ -22,6 +22,7 @@ SETTINGS = {
     201: ("equalization_voltage", "V", 0.01, False),
     202: ("absorption_voltage", "V", 0.01, False),
     203: ("float_voltage", "V", 0.01, False),
+    204: ("battery_capacity", "Ah", 1, False),
     250: ("tou1_start_hhmm", "", 1, False),
     251: ("tou2_start_hhmm", "", 1, False),
     252: ("tou3_start_hhmm", "", 1, False),
