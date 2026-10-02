@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 
+from register_map import describe
 from settings import setting
 
 LISTEN = (setting("HOTSPOT_GATEWAY"), int(setting("PROXY_PORT")))
@@ -41,6 +42,7 @@ LOG = open(f"{LOG_DIR}/deye-proxy.log", "a", buffering=1)
 FRAMES = open(f"{LOG_DIR}/deye-proxy-frames.hex", "a", buffering=1)
 REGS = open(f"{LOG_DIR}/deye-registers.jsonl", "a", buffering=1)
 LIVE = open(f"{LOG_DIR}/deye-live.jsonl", "a", buffering=1)
+CLOUD_READS = open(f"{LOG_DIR}/deye-cloud-reads.log", "a", buffering=1)
 
 CURRENT = {"session": None}
 TYPES = {0x41: "HANDSHAKE", 0x42: "DATA", 0x43: "WIFI", 0x47: "HEARTBEAT", 0x48: "TYPE48", 0x4D: "TYPE4D",
@@ -69,6 +71,32 @@ client_ctx.verify_mode = ssl.CERT_REQUIRED
 
 def checksum(frame):
     return sum(frame[1:-2]) & 0xFF
+
+
+def parse_batch_request(payload):
+    if len(payload) < 17 or payload[0] != 0x04:
+        return None
+    count = payload[16]
+    entries = []
+    for i in range(count):
+        off = 17 + 4 * i
+        if off + 4 > len(payload):
+            break
+        entries.append((payload[off], struct.unpack(">H", payload[off + 1:off + 3])[0], payload[off + 3]))
+    return entries
+
+
+def parse_batch_reply(payload, entries):
+    values, i = [], 16
+    for fc, reg, count in entries:
+        if i >= len(payload):
+            break
+        n = payload[i]
+        data = payload[i + 1:i + 1 + n]
+        i += 1 + n
+        for k in range(len(data) // 2):
+            values.append((reg + k, struct.unpack(">H", data[2 * k:2 * k + 2])[0]))
+    return values
 
 
 def modbus_crc(data):
@@ -116,6 +144,31 @@ class Session:
         self.reply = None
         self.reply_event = threading.Event()
         self.req_lock = threading.Lock()
+        self.cloud_requests = {}
+
+    def note_cloud_request(self, frame):
+        try:
+            payload = frame[11:-2]
+            entries = parse_batch_request(payload)
+            if entries is None:
+                CLOUD_READS.write(f"{ts()} REQUEST unknown format {payload.hex(' ')}\n")
+                return
+            if any(fc not in READ_FUNCTIONS for fc, _, _ in entries):
+                CLOUD_READS.write(f"{ts()} REQUEST non read {payload.hex(' ')}\n")
+            self.cloud_requests[frame[5]] = entries
+        except Exception as e:
+            log(f"cloud request decode error: {e!r}")
+
+    def note_cloud_reply(self, frame):
+        try:
+            entries = self.cloud_requests.pop(frame[5], None)
+            if entries is None:
+                return
+            stamp = ts()
+            for reg, raw in parse_batch_reply(frame[11:-2], entries):
+                CLOUD_READS.write(f"{stamp} {describe(reg, raw)}\n")
+        except Exception as e:
+            log(f"cloud reply decode error: {e!r}")
 
     def record(self, direction, frame):
         name = TYPES.get(frame[4], f"0x{frame[4]:02x}")
@@ -133,6 +186,7 @@ class Session:
                     if kind == "frame":
                         if chunk[4] == 0x45:
                             self.recent_cloud_ids = (self.recent_cloud_ids + [chunk[5]])[-20:]
+                            self.note_cloud_request(chunk)
                         self.record("DOWN", chunk)
                     with self.to_stick_lock:
                         self.stick.sendall(chunk)
@@ -157,6 +211,8 @@ class Session:
                             self.reply_event.set()
                             FRAMES.write(f"{ts()} LOCAL CMD_REPLY {chunk.hex()}\n")
                             continue
+                        if chunk[4] == 0x15:
+                            self.note_cloud_reply(chunk)
                         self.record("UP  ", chunk)
                     self.cloud.sendall(chunk)
         except Exception as e:

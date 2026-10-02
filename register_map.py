@@ -37,6 +37,15 @@ SETTINGS = {
 }
 
 
+def describe(reg, raw):
+    entry = LIVE.get(reg) or SETTINGS.get(reg)
+    if entry is None:
+        return f"{reg} raw {raw}"
+    name, unit, scale, signed = entry
+    value = raw - 65536 if signed and raw > 32767 else raw
+    return f"{reg} {name} {round(value * scale, 2)} {unit}".rstrip()
+
+
 def decode(raw, table=LIVE):
     out = {}
     for reg, (name, unit, scale, signed) in table.items():

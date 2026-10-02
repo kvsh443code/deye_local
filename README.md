@@ -54,6 +54,12 @@ Every frame is logged here in both directions after decryption.
 tail -f /var/log/deye-proxy/deye-proxy-frames.hex
 ```
 
+Every register value read by the cloud is logged here with its name where it is known. Any cloud request that is not a read is logged here too.
+
+```bash
+tail -F /var/log/deye-proxy/deye-cloud-reads.log
+```
+
 Service output and errors are shown by systemd.
 
 ```bash
