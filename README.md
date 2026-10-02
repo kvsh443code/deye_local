@@ -1,4 +1,4 @@
-# Deye local proxy
+# Deye SUN-6K-OG02LP1-EU-AM1 local proxy
 
 ## Install
 
