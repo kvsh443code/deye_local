@@ -23,8 +23,12 @@ if CLOUD_WRITES not in ("allow", "block"):
     sys.exit(f"CLOUD_WRITES must be allow or block, got {CLOUD_WRITES!r}")
 
 POLL_MODE = sys.argv[1] if len(sys.argv) > 1 else setting("POLL_MODE")
-DISCOVER_RANGE = range(int(setting("DISCOVER_FIRST_REG")), int(setting("DISCOVER_LAST_REG")) + 1)
-POLL_REGS = list(range(int(setting("POLL_FIRST_REG")), int(setting("POLL_LAST_REG")) + 1))
+DISCOVER_RANGE = range(
+    int(setting("DISCOVER_FIRST_REG")), int(setting("DISCOVER_LAST_REG")) + 1
+)
+POLL_REGS = list(
+    range(int(setting("POLL_FIRST_REG")), int(setting("POLL_LAST_REG")) + 1)
+)
 POLL_INTERVAL_S = float(setting("POLL_INTERVAL_S"))
 POLL_BATCH_GAP_S = float(setting("POLL_BATCH_GAP_S"))
 BATCH = int(setting("READ_BATCH_SIZE"))
@@ -48,13 +52,26 @@ LIVE = open(f"{LOG_DIR}/deye-live.jsonl", "a", buffering=1)
 CLOUD_READS = open(f"{LOG_DIR}/deye-cloud-reads.log", "a", buffering=1)
 
 CURRENT = {"session": None}
-TYPES = {0x41: "HANDSHAKE", 0x42: "DATA", 0x43: "WIFI", 0x47: "HEARTBEAT", 0x48: "TYPE48", 0x4D: "TYPE4D",
-         0x11: "HANDSHAKE_ACK", 0x12: "DATA_ACK", 0x13: "WIFI_ACK", 0x17: "HEARTBEAT_ACK", 0x18: "TYPE48_ACK",
-         0x1D: "TYPE4D_ACK", 0x45: "CMD_TO_INVERTER", 0x15: "CMD_REPLY"}
+TYPES = {
+    0x41: "HANDSHAKE",
+    0x42: "DATA",
+    0x43: "WIFI",
+    0x47: "HEARTBEAT",
+    0x48: "TYPE48",
+    0x4D: "TYPE4D",
+    0x11: "HANDSHAKE_ACK",
+    0x12: "DATA_ACK",
+    0x13: "WIFI_ACK",
+    0x17: "HEARTBEAT_ACK",
+    0x18: "TYPE48_ACK",
+    0x1D: "TYPE4D_ACK",
+    0x45: "CMD_TO_INVERTER",
+    0x15: "CMD_REPLY",
+}
 
 
 def ts():
-    return datetime.datetime.now().isoformat(timespec="seconds")
+    return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
 
 
 def log(m):
@@ -84,11 +101,18 @@ def parse_batch_request(payload):
     for _ in range(payload[16]):
         if off + 4 > len(payload):
             break
-        fc, reg, count = payload[off], struct.unpack(">H", payload[off + 1:off + 3])[0], payload[off + 3]
+        fc, reg, count = (
+            payload[off],
+            struct.unpack(">H", payload[off + 1 : off + 3])[0],
+            payload[off + 3],
+        )
         off += 4
         values = []
         if writes:
-            values = [struct.unpack(">H", payload[off + 2 * k:off + 2 * k + 2])[0] for k in range(count)]
+            values = [
+                struct.unpack(">H", payload[off + 2 * k : off + 2 * k + 2])[0]
+                for k in range(count)
+            ]
             off += 2 * count
         entries.append((fc, reg, count, values))
     return "write" if writes else "read", entries
@@ -96,11 +120,15 @@ def parse_batch_request(payload):
 
 def is_read_request(frame):
     parsed = parse_batch_request(frame[11:-2])
-    return parsed is not None and parsed[0] == "read" and all(fc in READ_FUNCTIONS for fc, _, _, _ in parsed[1])
+    return (
+        parsed is not None
+        and parsed[0] == "read"
+        and all(fc in READ_FUNCTIONS for fc, _, _, _ in parsed[1])
+    )
 
 
 def parse_write_reply(payload, entries):
-    statuses = payload[16:16 + len(entries)]
+    statuses = payload[16 : 16 + len(entries)]
     return [(reg, status) for (_, reg, _, _), status in zip(entries, statuses)]
 
 
@@ -110,10 +138,10 @@ def parse_batch_reply(payload, entries):
         if i >= len(payload):
             break
         n = payload[i]
-        data = payload[i + 1:i + 1 + n]
+        data = payload[i + 1 : i + 1 + n]
         i += 1 + n
         for k in range(len(data) // 2):
-            values.append((reg + k, struct.unpack(">H", data[2 * k:2 * k + 2])[0]))
+            values.append((reg + k, struct.unpack(">H", data[2 * k : 2 * k + 2])[0]))
     return values
 
 
@@ -136,7 +164,9 @@ class Splitter:
         while self.buf:
             if self.buf[0] != 0xA5:
                 idx = self.buf.find(b"\xa5")
-                junk, self.buf = (self.buf, b"") if idx < 0 else (self.buf[:idx], self.buf[idx:])
+                junk, self.buf = (
+                    (self.buf, b"") if idx < 0 else (self.buf[:idx], self.buf[idx:])
+                )
                 out.append(("raw", junk))
                 continue
             if len(self.buf) < 3:
@@ -164,22 +194,28 @@ class Session:
         self.req_lock = threading.Lock()
         self.cloud_requests = {}
 
-    def note_cloud_request(self, frame):
+    def note_cloud_request(self, frame, blocked=False):
         try:
             payload = frame[11:-2]
+            stamp = ts()
             parsed = parse_batch_request(payload)
             if parsed is None:
-                CLOUD_READS.write(f"{ts()} REQUEST unknown format {payload.hex(' ')}\n")
+                label = "BLOCKED" if blocked else "REQUEST"
+                CLOUD_READS.write(f"{stamp} {label} unknown format {payload.hex(' ')}\n")
                 return
             kind, entries = parsed
-            stamp = ts()
             if kind == "write":
+                label = "BLOCKED" if blocked else "WRITE"
                 for fc, reg, _, values in entries:
                     for k, value in enumerate(values):
-                        CLOUD_READS.write(f"{stamp} WRITE fc=0x{fc:02x} {describe(reg + k, value)}\n")
+                        CLOUD_READS.write(
+                            f"{stamp} {label} fc=0x{fc:02x} {describe(reg + k, value)}\n"
+                        )
             elif any(fc not in READ_FUNCTIONS for fc, _, _, _ in entries):
-                CLOUD_READS.write(f"{stamp} REQUEST non read {payload.hex(' ')}\n")
-            self.cloud_requests[frame[5]] = (kind, entries)
+                label = "BLOCKED" if blocked else "REQUEST"
+                CLOUD_READS.write(f"{stamp} {label} non read {payload.hex(' ')}\n")
+            if not blocked:
+                self.cloud_requests[frame[5]] = (kind, entries)
         except Exception as e:
             log(f"cloud request decode error: {e!r}")
 
@@ -215,12 +251,15 @@ class Session:
                 for kind, chunk in sp.feed(data):
                     if kind == "frame":
                         if chunk[4] == 0x45:
-                            self.recent_cloud_ids = (self.recent_cloud_ids + [chunk[5]])[-20:]
-                            self.note_cloud_request(chunk)
-                            if CLOUD_WRITES == "block" and not is_read_request(chunk):
-                                self.cloud_requests.pop(chunk[5], None)
-                                self.record("DROP", chunk)
-                                CLOUD_READS.write(f"{ts()} BLOCKED id={chunk[5]:02x} {chunk[11:-2].hex(' ')}\n")
+                            self.recent_cloud_ids = (
+                                self.recent_cloud_ids + [chunk[5]]
+                            )[-20:]
+                            blocked = CLOUD_WRITES == "block" and not is_read_request(
+                                chunk
+                            )
+                            self.note_cloud_request(chunk, blocked)
+                            if blocked:
+                                self.record("BLOCKED", chunk)
                                 continue
                         self.record("DOWN", chunk)
                     with self.to_stick_lock:
@@ -241,7 +280,11 @@ class Session:
                     if kind == "frame":
                         if self.serial is None:
                             self.serial = chunk[7:11]
-                        if chunk[4] == 0x15 and self.pending_id is not None and chunk[5] == self.pending_id:
+                        if (
+                            chunk[4] == 0x15
+                            and self.pending_id is not None
+                            and chunk[5] == self.pending_id
+                        ):
                             self.reply = chunk
                             self.reply_event.set()
                             FRAMES.write(f"{ts()} LOCAL CMD_REPLY {chunk.hex()}\n")
@@ -259,20 +302,45 @@ class Session:
         base = (self.recent_cloud_ids[-1] if self.recent_cloud_ids else 0x45) + 0x80
         for k in range(256):
             cand = (base + k) & 0xFF
-            if all(abs(((cand - c + 128) & 0xFF) - 128) > 16 for c in self.recent_cloud_ids):
+            if all(
+                abs(((cand - c + 128) & 0xFF) - 128) > 16 for c in self.recent_cloud_ids
+            ):
                 return cand
         return base & 0xFF
 
     def build_read(self, msg_id, regs):
-        entries = b"".join(bytes([READ_HOLDING]) + struct.pack(">H", r) + b"\x01" for r in regs)
-        payload = b"\x04\x34\x54" + b"\x00" * 8 + struct.pack("<I", int(time.time())) + b"\x01" + bytes([len(regs)]) + entries
-        frame = bytearray(b"\xa5" + struct.pack("<H", len(payload)) + bytes([0x10, 0x45, msg_id, 0x01]) + self.serial + payload + b"\x00\x15")
+        entries = b"".join(
+            bytes([READ_HOLDING]) + struct.pack(">H", r) + b"\x01" for r in regs
+        )
+        payload = (
+            b"\x04\x34\x54"
+            + b"\x00" * 8
+            + struct.pack("<I", int(time.time()))
+            + b"\x01"
+            + bytes([len(regs)])
+            + entries
+        )
+        frame = bytearray(
+            b"\xa5"
+            + struct.pack("<H", len(payload))
+            + bytes([0x10, 0x45, msg_id, 0x01])
+            + self.serial
+            + payload
+            + b"\x00\x15"
+        )
         frame[-2] = checksum(frame)
         assert all(frame[11 + 17 + 4 * i] == READ_HOLDING for i in range(len(regs)))
         return bytes(frame)
 
     def build_frame(self, msg_id, payload):
-        frame = bytearray(b"\xa5" + struct.pack("<H", len(payload)) + bytes([0x10, 0x45, msg_id, 0x01]) + self.serial + payload + b"\x00\x15")
+        frame = bytearray(
+            b"\xa5"
+            + struct.pack("<H", len(payload))
+            + bytes([0x10, 0x45, msg_id, 0x01])
+            + self.serial
+            + payload
+            + b"\x00\x15"
+        )
         frame[-2] = checksum(frame)
         return bytes(frame)
 
@@ -300,7 +368,7 @@ class Session:
             if i >= len(p):
                 break
             n = p[i]
-            raw = p[i + 1:i + 1 + n]
+            raw = p[i + 1 : i + 1 + n]
             values[r] = int.from_bytes(raw, "big") if n == 2 else raw.hex()
             i += 1 + n
         return values
@@ -322,7 +390,7 @@ class Session:
         for i in range(0, len(regs), BATCH):
             if self.done.is_set():
                 break
-            chunk = regs[i:i + BATCH]
+            chunk = regs[i : i + BATCH]
             vals = self.read(chunk)
             if vals is None:
                 log(f"DISCOVER no reply for {chunk[0]}..{chunk[-1]}")
@@ -334,19 +402,34 @@ class Session:
 
     def probe(self):
         def p1(msg_id):
-            payload = b"\x04\x34\x54" + b"\x00" * 8 + struct.pack("<I", int(time.time())) + b"\x01\x01" + bytes([READ_HOLDING]) + struct.pack(">H", PROBE_REG) + bytes([PROBE_COUNT])
+            payload = (
+                b"\x04\x34\x54"
+                + b"\x00" * 8
+                + struct.pack("<I", int(time.time()))
+                + b"\x01\x01"
+                + bytes([READ_HOLDING])
+                + struct.pack(">H", PROBE_REG)
+                + bytes([PROBE_COUNT])
+            )
             return self.build_frame(msg_id, payload)
 
         def p2(msg_id):
-            rtu = bytes([0x01, READ_HOLDING]) + struct.pack(">HH", PROBE_REG, PROBE_COUNT)
+            rtu = bytes([0x01, READ_HOLDING]) + struct.pack(
+                ">HH", PROBE_REG, PROBE_COUNT
+            )
             rtu += struct.pack("<H", modbus_crc(rtu))
             payload = b"\x02" + b"\x00\x00" + b"\x00" * 12 + rtu
             return self.build_frame(msg_id, payload)
 
-        for name, build in (("P1 batch count=10", p1), ("P2 raw modbus frametype=02", p2)):
+        for name, build in (
+            ("P1 batch count=10", p1),
+            ("P2 raw modbus frametype=02", p2),
+        ):
             sent = build(0)
             reply = self.request(build)
-            log(f"PROBE {name}: sent={sent[11:-2].hex(' ')} reply={'NONE' if reply is None else reply.hex(' ')}")
+            log(
+                f"PROBE {name}: sent={sent[11:-2].hex(' ')} reply={'NONE' if reply is None else reply.hex(' ')}"
+            )
             self.done.wait(SPACING_S)
         log("PROBE done")
 
@@ -359,16 +442,20 @@ class Session:
             for i in range(0, len(POLL_REGS), BATCH):
                 if self.done.is_set():
                     return
-                vals = self.read(POLL_REGS[i:i + BATCH])
+                vals = self.read(POLL_REGS[i : i + BATCH])
                 if vals is None:
                     misses += 1
-                    log(f"POLL no reply for {POLL_REGS[i]}..{POLL_REGS[min(i + BATCH, len(POLL_REGS)) - 1]} (misses={misses})")
+                    log(
+                        f"POLL no reply for {POLL_REGS[i]}..{POLL_REGS[min(i + BATCH, len(POLL_REGS)) - 1]} (misses={misses})"
+                    )
                 else:
                     snapshot.update(vals)
                 self.done.wait(POLL_BATCH_GAP_S)
             if snapshot:
                 LIVE.write(json.dumps({"t": ts(), "values": snapshot}) + "\n")
-            self.done.wait(max(POLL_BATCH_GAP_S, POLL_INTERVAL_S - (time.monotonic() - started)))
+            self.done.wait(
+                max(POLL_BATCH_GAP_S, POLL_INTERVAL_S - (time.monotonic() - started))
+            )
 
 
 def handle(raw, addr):
@@ -384,7 +471,9 @@ def handle(raw, addr):
         up_raw = socket.create_connection(UPSTREAM, timeout=CLOUD_CONNECT_TIMEOUT_S)
         up_raw.settimeout(CLOUD_IDLE_TIMEOUT_S)
         cloud = client_ctx.wrap_socket(up_raw)
-        log(f"CLOUD CONNECTED {cloud.getpeername()} {cloud.version()} (IGEN CA verified)")
+        log(
+            f"CLOUD CONNECTED {cloud.getpeername()} {cloud.version()} (IGEN CA verified)"
+        )
     except Exception as e:
         log(f"cloud connect FAILED, dropping stick so it retries: {e!r}")
         stick.close()
@@ -421,19 +510,36 @@ def local_client(conn, addr):
                 if req[4] != 0x45 or len(payload) < 15 + 8 or payload[0] != 0x02:
                     log(f"LOCAL reject (not a V5 Modbus request): {req.hex()}")
                     continue
-                if modbus_crc(rtu[:-2]) != struct.unpack("<H", rtu[-2:])[0] or rtu[1] not in READ_FUNCTIONS:
-                    log(f"LOCAL reject (bad CRC or non-read function 0x{rtu[1]:02x}): {rtu.hex(' ')}")
+                if (
+                    modbus_crc(rtu[:-2]) != struct.unpack("<H", rtu[-2:])[0]
+                    or rtu[1] not in READ_FUNCTIONS
+                ):
+                    log(
+                        f"LOCAL reject (bad CRC or non-read function 0x{rtu[1]:02x}): {rtu.hex(' ')}"
+                    )
                     continue
                 start, count = struct.unpack(">HH", rtu[2:6])
                 sess = CURRENT["session"]
                 if sess is None or sess.serial is None:
-                    log(f"LOCAL fc={rtu[1]:02x} start={start} count={count}: stick not connected")
+                    log(
+                        f"LOCAL fc={rtu[1]:02x} start={start} count={count}: stick not connected"
+                    )
                     continue
                 reply = sess.request(lambda msg_id: sess.build_frame(msg_id, payload))
                 if reply is None:
-                    log(f"LOCAL fc={rtu[1]:02x} start={start} count={count}: no reply from stick")
+                    log(
+                        f"LOCAL fc={rtu[1]:02x} start={start} count={count}: no reply from stick"
+                    )
                     continue
-                out = bytearray(b"\xa5" + reply[1:4] + b"\x15" + req[5:7] + sess.serial + reply[11:-2] + b"\x00\x15")
+                out = bytearray(
+                    b"\xa5"
+                    + reply[1:4]
+                    + b"\x15"
+                    + req[5:7]
+                    + sess.serial
+                    + reply[11:-2]
+                    + b"\x00\x15"
+                )
                 out[-2] = checksum(out)
                 conn.sendall(bytes(out))
                 log(f"LOCAL fc={rtu[1]:02x} start={start} count={count}: ok")
@@ -458,14 +564,18 @@ ls = socket.socket()
 ls.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 ls.bind(LOCAL_LOGGER)
 ls.listen(4)
-log(f"local logger endpoint on {LOCAL_LOGGER[0]}:{LOCAL_LOGGER[1]} allow={sorted(LOCAL_ALLOWED)}")
+log(
+    f"local logger endpoint on {LOCAL_LOGGER[0]}:{LOCAL_LOGGER[1]} allow={sorted(LOCAL_ALLOWED)}"
+)
 
 s = socket.socket()
 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 s.bind(LISTEN)
 threading.Thread(target=local_server, args=(ls,), daemon=True).start()
 s.listen(4)
-log(f"deye proxy listening on {LISTEN[0]}:{LISTEN[1]} -> {UPSTREAM[0]}:{UPSTREAM[1]} poll={POLL_MODE} cloud_writes={CLOUD_WRITES}")
+log(
+    f"deye proxy listening on {LISTEN[0]}:{LISTEN[1]} -> {UPSTREAM[0]}:{UPSTREAM[1]} poll={POLL_MODE} cloud_writes={CLOUD_WRITES}"
+)
 while True:
     c, a = s.accept()
     threading.Thread(target=handle, args=(c, a), daemon=True).start()

@@ -9,7 +9,7 @@ LOG = open(f"{LOG_DIR}/mitm-test.log", "a", buffering=1)
 
 
 def log(m):
-    LOG.write(f"{datetime.datetime.now().isoformat(timespec='seconds')} {m}\n")
+    LOG.write(f"{datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')} {m}\n")
 
 
 ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)

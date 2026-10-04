@@ -7,7 +7,7 @@ LOG = open(f"{setting('LOG_DIR')}/serverb-capture.log", "a", buffering=1)
 
 
 def log(m):
-    LOG.write(f"{datetime.datetime.now().isoformat(timespec='seconds')} {m}\n")
+    LOG.write(f"{datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')} {m}\n")
 
 
 def handle(c, a):

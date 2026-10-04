@@ -11,7 +11,7 @@ TYPES = {0x41: "HANDSHAKE", 0x42: "DATA", 0x43: "WIFI", 0x47: "HEARTBEAT", 0x48:
 
 
 def log(m):
-    LOG.write(f"{datetime.datetime.now().isoformat(timespec='seconds')} {m}\n")
+    LOG.write(f"{datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')} {m}\n")
 
 
 def checksum(frame):
@@ -74,7 +74,7 @@ def handle(raw, addr):
                 ok = checksum(frame) == frame[-2] and frame[-1] == 0x15
                 name = TYPES.get(ftype, f"0x{ftype:02x}")
                 log(f"RX {name} len={flen} seq={frame[5]:02x}/{frame[6]:02x} schema={payload[1] if len(payload) > 1 else -1:02x} csum={'ok' if ok else 'BAD'}")
-                DATA.write(f"{datetime.datetime.now().isoformat(timespec='seconds')} {name} {frame.hex()}\n")
+                DATA.write(f"{datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')} {name} {frame.hex()}\n")
                 tls.sendall(build_response(hdr, payload))
     except Exception as e:
         log(f"read ended {addr}: {e!r}")
