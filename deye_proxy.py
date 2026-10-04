@@ -262,7 +262,9 @@ class Session:
             parsed = parse_cloud_request(payload)
             if parsed is None:
                 label = "BLOCKED" if blocked else "REQUEST"
-                CLOUD_READS.write(f"{stamp} {label} unknown format {payload.hex(' ')}\n")
+                CLOUD_READS.write(
+                    f"{stamp} {label} unknown format {payload.hex(' ')}\n"
+                )
                 return
             kind, entries = parsed
             if kind in ("write", "rtu_write"):
