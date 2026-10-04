@@ -576,13 +576,19 @@ def local_client(conn, addr):
                 if req[4] != 0x45 or len(payload) < 15 + 8 or payload[0] != 0x02:
                     log(f"LOCAL reject (not a V5 Modbus request): {req.hex()}")
                     continue
-                if (
-                    modbus_crc(rtu[:-2]) != struct.unpack("<H", rtu[-2:])[0]
-                    or rtu[1] not in READ_FUNCTIONS
-                ):
-                    log(
-                        f"LOCAL reject (bad CRC or non-read function 0x{rtu[1]:02x}): {rtu.hex(' ')}"
-                    )
+                if modbus_crc(rtu[:-2]) != struct.unpack("<H", rtu[-2:])[0]:
+                    log(f"LOCAL BLOCKED bad CRC: {rtu.hex(' ')}")
+                    continue
+                if rtu[1] not in READ_FUNCTIONS:
+                    parsed = parse_rtu_request(payload)
+                    if parsed and parsed[0] == "rtu_write":
+                        for fc, reg, _, values in parsed[1]:
+                            for k, value in enumerate(values):
+                                log(
+                                    f"LOCAL BLOCKED fc=0x{fc:02x} {describe(reg + k, value)}"
+                                )
+                    else:
+                        log(f"LOCAL BLOCKED fc=0x{rtu[1]:02x}: {rtu.hex(' ')}")
                     continue
                 start, count = struct.unpack(">HH", rtu[2:6])
                 sess = CURRENT["session"]
