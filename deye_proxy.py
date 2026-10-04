@@ -118,13 +118,47 @@ def parse_batch_request(payload):
     return "write" if writes else "read", entries
 
 
+def parse_rtu_request(payload):
+    if len(payload) < 23 or payload[0] != 0x02:
+        return None
+    rtu = payload[15:]
+    if len(rtu) != 8 or modbus_crc(rtu[:-2]) != struct.unpack("<H", rtu[-2:])[0]:
+        return None
+    fc = rtu[1]
+    start, count = struct.unpack(">HH", rtu[2:6])
+    kind = "rtu_read" if fc in READ_FUNCTIONS else "rtu_other"
+    return kind, [(fc, start, count, [])]
+
+
+def parse_cloud_request(payload):
+    return parse_batch_request(payload) or parse_rtu_request(payload)
+
+
 def is_read_request(frame):
-    parsed = parse_batch_request(frame[11:-2])
-    return (
-        parsed is not None
-        and parsed[0] == "read"
-        and all(fc in READ_FUNCTIONS for fc, _, _, _ in parsed[1])
-    )
+    parsed = parse_cloud_request(frame[11:-2])
+    if parsed is None:
+        return False
+    kind, entries = parsed
+    if kind == "rtu_read":
+        return True
+    return kind == "read" and all(fc in READ_FUNCTIONS for fc, _, _, _ in entries)
+
+
+def parse_rtu_reply(payload, entries):
+    fc, start, _, _ = entries[0]
+    rtu = payload[14:]
+    if len(rtu) < 5 or rtu[1] != fc:
+        return []
+    n = rtu[2]
+    if len(rtu) < 3 + n + 2:
+        return []
+    if modbus_crc(rtu[: 3 + n]) != struct.unpack("<H", rtu[3 + n : 5 + n])[0]:
+        return []
+    data = rtu[3 : 3 + n]
+    return [
+        (start + k, struct.unpack(">H", data[2 * k : 2 * k + 2])[0])
+        for k in range(n // 2)
+    ]
 
 
 def parse_write_reply(payload, entries):
@@ -198,7 +232,7 @@ class Session:
         try:
             payload = frame[11:-2]
             stamp = ts()
-            parsed = parse_batch_request(payload)
+            parsed = parse_cloud_request(payload)
             if parsed is None:
                 label = "BLOCKED" if blocked else "REQUEST"
                 CLOUD_READS.write(f"{stamp} {label} unknown format {payload.hex(' ')}\n")
@@ -231,7 +265,11 @@ class Session:
                     result = "OK" if status == 0x01 else f"FAILED status=0x{status:02x}"
                     CLOUD_READS.write(f"{stamp} WRITE {result} {reg}\n")
                 return
-            for reg, raw in parse_batch_reply(frame[11:-2], entries):
+            if kind == "rtu_read":
+                values = parse_rtu_reply(frame[11:-2], entries)
+            else:
+                values = parse_batch_reply(frame[11:-2], entries)
+            for reg, raw in values:
                 CLOUD_READS.write(f"{stamp} {describe(reg, raw)}\n")
         except Exception as e:
             log(f"cloud reply decode error: {e!r}")
