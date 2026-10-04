@@ -122,12 +122,24 @@ def parse_rtu_request(payload):
     if len(payload) < 23 or payload[0] != 0x02:
         return None
     rtu = payload[15:]
-    if len(rtu) != 8 or modbus_crc(rtu[:-2]) != struct.unpack("<H", rtu[-2:])[0]:
+    if len(rtu) < 8 or modbus_crc(rtu[:-2]) != struct.unpack("<H", rtu[-2:])[0]:
         return None
     fc = rtu[1]
-    start, count = struct.unpack(">HH", rtu[2:6])
-    kind = "rtu_read" if fc in READ_FUNCTIONS else "rtu_other"
-    return kind, [(fc, start, count, [])]
+    if fc in READ_FUNCTIONS and len(rtu) == 8:
+        start, count = struct.unpack(">HH", rtu[2:6])
+        return "rtu_read", [(fc, start, count, [])]
+    if fc == 0x06 and len(rtu) == 8:
+        reg, value = struct.unpack(">HH", rtu[2:6])
+        return "rtu_write", [(fc, reg, 1, [value])]
+    if fc == 0x10 and len(rtu) >= 9:
+        start, count = struct.unpack(">HH", rtu[2:6])
+        n = rtu[6]
+        if n == 2 * count and len(rtu) == 9 + n:
+            values = [
+                struct.unpack(">H", rtu[7 + 2 * k : 9 + 2 * k])[0] for k in range(count)
+            ]
+            return "rtu_write", [(fc, start, count, values)]
+    return "rtu_other", [(fc, 0, 0, [])]
 
 
 def parse_cloud_request(payload):
@@ -142,6 +154,21 @@ def is_read_request(frame):
     if kind == "rtu_read":
         return True
     return kind == "read" and all(fc in READ_FUNCTIONS for fc, _, _, _ in entries)
+
+
+def parse_rtu_write_reply(payload, entries):
+    fc, start, count, _ = entries[0]
+    regs = [start + k for k in range(count)]
+    rtu = payload[14:]
+    if len(rtu) >= 5 and rtu[1] == (fc | 0x80):
+        return [(reg, rtu[2]) for reg in regs]
+    if (
+        len(rtu) >= 8
+        and rtu[1] == fc
+        and modbus_crc(rtu[:6]) == struct.unpack("<H", rtu[6:8])[0]
+    ):
+        return [(reg, 0x01) for reg in regs]
+    return [(reg, 0xFF) for reg in regs]
 
 
 def parse_rtu_reply(payload, entries):
@@ -238,7 +265,7 @@ class Session:
                 CLOUD_READS.write(f"{stamp} {label} unknown format {payload.hex(' ')}\n")
                 return
             kind, entries = parsed
-            if kind == "write":
+            if kind in ("write", "rtu_write"):
                 label = "BLOCKED" if blocked else "WRITE"
                 for fc, reg, _, values in entries:
                     for k, value in enumerate(values):
@@ -260,8 +287,9 @@ class Session:
                 return
             kind, entries = request
             stamp = ts()
-            if kind == "write":
-                for reg, status in parse_write_reply(frame[11:-2], entries):
+            if kind in ("write", "rtu_write"):
+                parse = parse_write_reply if kind == "write" else parse_rtu_write_reply
+                for reg, status in parse(frame[11:-2], entries):
                     result = "OK" if status == 0x01 else f"FAILED status=0x{status:02x}"
                     CLOUD_READS.write(f"{stamp} WRITE {result} {reg}\n")
                 return
