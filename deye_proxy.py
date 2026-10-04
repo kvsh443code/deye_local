@@ -433,7 +433,7 @@ def local_client(conn, addr):
                 if reply is None:
                     log(f"LOCAL fc={rtu[1]:02x} start={start} count={count}: no reply from stick")
                     continue
-                out = bytearray(b"\xa5" + reply[1:4] + b"\x15" + req[5:7] + req[7:11] + reply[11:-2] + b"\x00\x15")
+                out = bytearray(b"\xa5" + reply[1:4] + b"\x15" + req[5:7] + sess.serial + reply[11:-2] + b"\x00\x15")
                 out[-2] = checksum(out)
                 conn.sendall(bytes(out))
                 log(f"LOCAL fc={rtu[1]:02x} start={start} count={count}: ok")
