@@ -46,7 +46,7 @@ Reads from Home Assistant on the local port are always read only.
 
 ## Logs
 
-Logs are written to the LOG_DIR folder set in .env. The default folder is used in the paths below.
+Logs are written to the LOG_DIR folder set in .env. The default folder is used in the paths below. Each log is rotated daily and compressed, and LOG_KEEP_DAYS sets how many days are kept. The default of 92 keeps about three months.
 
 Connections from the stick, the cloud and Home Assistant are logged here.
 

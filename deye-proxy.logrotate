@@ -1,7 +1,7 @@
 @LOG_DIR@/*.log @LOG_DIR@/*.hex @LOG_DIR@/*.jsonl {
     su @SERVICE_USER@ @SERVICE_USER@
     daily
-    rotate 14
+    rotate @LOG_KEEP_DAYS@
     compress
     delaycompress
     missingok

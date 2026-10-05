@@ -8,7 +8,7 @@ set -a; . ./.env; set +a
 
 for v in HOTSPOT_IFACE HOTSPOT_SSID HOTSPOT_PASSWORD HOTSPOT_GATEWAY STICK_MAC LOGGER_SERIAL \
          PROXY_PORT UPSTREAM_HOST UPSTREAM_PORT IGEN_CA_SHA256 CLOUD_WRITES LOCAL_BIND LOCAL_PORT LOCAL_ALLOW \
-         ADDR_WAIT_TIMEOUT_S SERVICE_USER INSTALL_DIR CONF_DIR LOG_DIR; do
+         ADDR_WAIT_TIMEOUT_S SERVICE_USER INSTALL_DIR CONF_DIR LOG_DIR LOG_KEEP_DAYS; do
   eval "val=\${$v:-}"
   [ -n "$val" ] || { echo "missing $v in .env" >&2; exit 1; }
 done
@@ -57,7 +57,7 @@ install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 750 "$LOG_DIR"
 
 render() {
   sed -e "s|@SERVICE_USER@|$SERVICE_USER|g" -e "s|@INSTALL_DIR@|$INSTALL_DIR|g" \
-      -e "s|@CONF_DIR@|$CONF_DIR|g" -e "s|@LOG_DIR@|$LOG_DIR|g" "$1"
+      -e "s|@CONF_DIR@|$CONF_DIR|g" -e "s|@LOG_DIR@|$LOG_DIR|g" -e "s|@LOG_KEEP_DAYS@|$LOG_KEEP_DAYS|g" "$1"
 }
 render deye-hotspot.service > /etc/systemd/system/deye-hotspot.service
 render deye-proxy.service > /etc/systemd/system/deye-proxy.service
